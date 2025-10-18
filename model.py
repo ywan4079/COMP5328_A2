@@ -124,10 +124,11 @@ class CNN(ModelBase):
 class VisionTransformer(ModelBase):
     def __init__(self, num_classes: int, num_epochs: int = 100, learning_rate: float = 0.001, batch_size: int = 128, patience: int = 10, criterion=nn.CrossEntropyLoss(), optimizer=torch.optim.Adam):
         super().__init__(num_epochs, learning_rate, batch_size, patience, criterion)
-        self.model = models.vit_b_16(weights=models.ViT_B_16_Weights.IMAGENET1K_SWAG_E2E_V1) # 86M
+        self.model = models.vit_b_16(weights=models.ViT_B_16_Weights.IMAGENET1K_SWAG_LINEAR_V1) # 86M
         self.model.heads.head = nn.Linear(self.model.heads.head.in_features, num_classes)
         self.model = self.model.to(self.device)
-        self.model_transform = models.ViT_B_16_Weights.IMAGENET1K_SWAG_E2E_V1.transforms()
+        self.model_transform = models.ViT_B_16_Weights.IMAGENET1K_SWAG_LINEAR_V1.transforms()
+        self.optimizer = optimizer(self.model.parameters(), lr=self.learning_rate)
 
     def train(self, train_dataset: ImageDataset):
         super().train(train_dataset)
