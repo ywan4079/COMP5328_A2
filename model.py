@@ -15,9 +15,10 @@ def loss_calculation(outputs, noisy_labels, transition_matrix): # this is cross-
     return loss
 
 class ModelBase:
-    def __init__(self, num_epochs: int = 100, learning_rate: float = 0.001, batch_size: int = 128, patience: int = 10, criterion=nn.CrossEntropyLoss()):
+    def __init__(self, num_epochs: int = 100, dataset_name: str = "", learning_rate: float = 0.001, batch_size: int = 128, patience: int = 10, criterion=nn.CrossEntropyLoss()):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.num_epochs = num_epochs
+        self.dataset_name = dataset_name
         self.learning_rate = learning_rate
         self.batch_size = batch_size
         self.patience = patience
@@ -108,8 +109,8 @@ class ModelBase:
         
 
 class CNN(ModelBase):
-    def __init__(self, num_classes: int, num_epochs: int = 100, learning_rate: float = 0.001, batch_size: int = 128, patience: int = 10, criterion=nn.CrossEntropyLoss(), optimizer=torch.optim.Adam):
-        super().__init__(num_epochs, learning_rate, batch_size, patience, criterion)
+    def __init__(self, num_classes: int, dataset_name: str = "", num_epochs: int = 100, learning_rate: float = 0.001, batch_size: int = 128, patience: int = 10, criterion=nn.CrossEntropyLoss(), optimizer=torch.optim.Adam):
+        super().__init__(num_epochs, dataset_name, learning_rate, batch_size, patience, criterion)
         self.model = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1) # 11.7M
         self.model.fc = nn.Linear(self.model.fc.in_features, num_classes)
         self.model = self.model.to(self.device)
@@ -118,12 +119,12 @@ class CNN(ModelBase):
 
     def train(self, train_dataset: ImageDataset):
         super().train(train_dataset)
-        torch.save(self.model.state_dict(), 'models/resnet18_model.pth')
+        torch.save(self.model.state_dict(), f'models/resnet18_{self.dataset_name}_model.pth')
     
 
 class VisionTransformer(ModelBase):
-    def __init__(self, num_classes: int, num_epochs: int = 100, learning_rate: float = 0.001, batch_size: int = 128, patience: int = 10, criterion=nn.CrossEntropyLoss(), optimizer=torch.optim.Adam):
-        super().__init__(num_epochs, learning_rate, batch_size, patience, criterion)
+    def __init__(self, num_classes: int, dataset_name: str = "", num_epochs: int = 100, learning_rate: float = 0.001, batch_size: int = 128, patience: int = 10, criterion=nn.CrossEntropyLoss(), optimizer=torch.optim.Adam):
+        super().__init__(num_epochs, dataset_name, learning_rate, batch_size, patience, criterion)
         self.model = models.vit_b_16(weights=models.ViT_B_16_Weights.IMAGENET1K_SWAG_LINEAR_V1) # 86M
         self.model.heads.head = nn.Linear(self.model.heads.head.in_features, num_classes)
         self.model = self.model.to(self.device)
@@ -132,4 +133,4 @@ class VisionTransformer(ModelBase):
 
     def train(self, train_dataset: ImageDataset):
         super().train(train_dataset)
-        torch.save(self.model.state_dict(), 'models/vitb16_model.pth')
+        torch.save(self.model.state_dict(), f'models/vitb16_{self.dataset_name}_model.pth')
