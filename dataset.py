@@ -4,6 +4,7 @@ import torch
 import numpy as np
 from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split
+import matplotlib.pyplot as plt
 
 def load_dataset(path: str):
     dataset = np.load(path)
@@ -11,6 +12,12 @@ def load_dataset(path: str):
     training_labels = dataset['Str']
     testing_data = dataset['Xts']
     testing_labels = dataset['Yts']
+    if path.startswith("datasets/FashionMNIST"):
+        training_data = training_data.reshape((-1, 28, 28))
+        testing_data = testing_data.reshape((-1, 28, 28))
+    else:
+        training_data = training_data.reshape((-1, 32, 32, 3))
+        testing_data = testing_data.reshape((-1, 32, 32, 3))
     return training_data, training_labels, testing_data, testing_labels
 
 class ImageDataset(Dataset):
@@ -31,7 +38,7 @@ class ImageDataset(Dataset):
         return image, self.labels[idx]
 
 def train_val_split(training_data: ImageDataset, ratio: float = 0.2, batch_size: int = 128):
-    train_idx, val_idx = train_test_split(list(range(len(training_data))), test_size=ratio, random_state=0)
+    train_idx, val_idx = train_test_split(list(range(len(training_data))), test_size=ratio)
     train_subset = Subset(training_data, train_idx)
     val_subset = Subset(training_data, val_idx)
 
@@ -42,3 +49,11 @@ def train_val_split(training_data: ImageDataset, ratio: float = 0.2, batch_size:
 def build_test_loader(test_data: ImageDataset, batch_size: int = 128):
     test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=False)
     return test_loader
+
+
+if __name__ == "__main__":
+    training_data, training_labels, testing_data, testing_labels = load_dataset('datasets/FashionMNIST0.6.npz')
+    train_dataset = ImageDataset(training_data, training_labels)
+
+    plt.imshow(train_dataset[0][0], cmap='gray')
+    plt.show()

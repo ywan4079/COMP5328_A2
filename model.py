@@ -9,7 +9,7 @@ def loss_calculation(outputs, noisy_labels, transition_matrix): # this is cross-
     if transition_matrix is None:
         return nn.CrossEntropyLoss()(outputs, noisy_labels)
     prob_clean = F.softmax(outputs, dim=1)
-    prob_noisy = (transition_matrix @ prob_clean.T).T
+    prob_noisy = prob_clean @ transition_matrix
     log_prob_noisy = torch.log(prob_noisy + 1e-12)  # Adding a small constant for numerical stability
     loss = F.nll_loss(log_prob_noisy, noisy_labels)
     return loss
@@ -117,10 +117,10 @@ class CNN(ModelBase):
         self.model_transform = models.ResNet18_Weights.DEFAULT.transforms()
         self.optimizer = optimizer(self.model.parameters(), lr=self.learning_rate)
 
-    def train(self, train_dataset: ImageDataset):
+    def train(self, train_dataset: ImageDataset, round):
         super().train(train_dataset)
-        torch.save(self.model.state_dict(), f'models/resnet18_{self.dataset_name}_model.pth')
-    
+        torch.save(self.model.state_dict(), f'models/resnet18_{self.dataset_name}_model_{round}.pth')
+
 
 class VisionTransformer(ModelBase):
     def __init__(self, num_classes: int, dataset_name: str = "", num_epochs: int = 100, learning_rate: float = 0.001, batch_size: int = 128, patience: int = 10, criterion=nn.CrossEntropyLoss(), optimizer=torch.optim.Adam):
@@ -131,6 +131,6 @@ class VisionTransformer(ModelBase):
         self.model_transform = models.ViT_B_16_Weights.IMAGENET1K_SWAG_LINEAR_V1.transforms()
         self.optimizer = optimizer(self.model.parameters(), lr=self.learning_rate)
 
-    def train(self, train_dataset: ImageDataset):
+    def train(self, train_dataset: ImageDataset, round: int):
         super().train(train_dataset)
-        torch.save(self.model.state_dict(), f'models/vitb16_{self.dataset_name}_model.pth')
+        torch.save(self.model.state_dict(), f'models/vitb16_{self.dataset_name}_model_{round}.pth')
