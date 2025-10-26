@@ -15,9 +15,9 @@ def load_dataset(path: str):
     if path.startswith("datasets/FashionMNIST"):
         training_data = training_data.reshape((-1, 28, 28))
         testing_data = testing_data.reshape((-1, 28, 28))
-    else:
-        training_data = training_data.reshape((-1, 32, 32, 3))
-        testing_data = testing_data.reshape((-1, 32, 32, 3))
+    # else:
+    #     training_data = training_data.reshape((-1, 32, 32, 3))
+    #     testing_data = testing_data.reshape((-1, 32, 32, 3))
     return training_data, training_labels, testing_data, testing_labels
 
 def scaling(dataset: np.ndarray):

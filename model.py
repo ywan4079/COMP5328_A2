@@ -184,7 +184,6 @@ class CNN(ModelBase):
             print(f"Training noisy CNN to estimate transition matrix...")
             noisy_cnn.train(train_dataset)
             probs = all_softmax(noisy_cnn.model, DataLoader(train_dataset, batch_size=self.batch_size, shuffle=False), self.device)
-            print(f"probs shape: {probs.shape}")
             T_hat = estimate_T_anchor(probs)
             train_dataset.transition_matrix = T_hat
         else:
