@@ -20,6 +20,9 @@ def load_dataset(path: str):
         testing_data = testing_data.reshape((-1, 32, 32, 3))
     return training_data, training_labels, testing_data, testing_labels
 
+def scaling(dataset: np.ndarray):
+    return dataset.astype(np.float32) / 255.0
+
 class ImageDataset(Dataset):
     def __init__(self, X, Y, transform=None, transition_matrix=None):
         self.images = X
