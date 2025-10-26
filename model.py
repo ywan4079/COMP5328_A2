@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from torchvision import models
 from torch.utils.data import DataLoader
 from dataset import train_val_split, build_test_loader, ImageDataset
+import numpy as np
 
 def forward_loss_calculation(outputs, noisy_labels, transition_matrix): # this is cross-entropy loss with loss correction
     if transition_matrix is None:
@@ -55,9 +56,12 @@ class ModelBase:
         self.model = None
         self.model_transform = None
 
-    def train(self, train_dataset: ImageDataset, nal_layer: bool = False):
+    def train(self, train_dataset: ImageDataset, val_dataset: ImageDataset, nal_layer: bool = False):
         train_dataset.transform = self.model_transform
-        train_loader, val_loader = train_val_split(train_dataset, batch_size=self.batch_size)
+        val_dataset.transform = self.model_transform
+        train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True)
+        val_loader = DataLoader(val_dataset, batch_size=self.batch_size, shuffle=False)
+        # train_loader, val_loader = train_val_split(train_dataset, batch_size=self.batch_size)
 
         best_val_loss = float('inf')
         epoch_no_improvement = 0
@@ -78,6 +82,7 @@ class ModelBase:
                     noisy_probs = self.nal(clean_probs)
                     loss = F.nll_loss(torch.log(noisy_probs), labels)
                 else:
+                    train_dataset.transition_matrix = train_dataset.transition_matrix.to(self.device)
                     loss = forward_loss_calculation(outputs, labels, train_dataset.transition_matrix)
                 loss.backward()
                 self.optimizer.step()
@@ -177,17 +182,17 @@ class CNN(ModelBase):
         self.model_transform = models.ResNet18_Weights.DEFAULT.transforms()
         self.optimizer = optimizer(self.model.parameters(), lr=self.learning_rate)
 
-    def train(self, train_dataset: ImageDataset):
+    def train(self, train_dataset: ImageDataset, val_dataset: ImageDataset):
         if train_dataset.transition_matrix is None:
             noisy_cnn = CNN(num_classes=self.model.fc.out_features, dataset_name=self.dataset_name, num_epochs=self.num_epochs, learning_rate=self.learning_rate, batch_size=self.batch_size, patience=self.patience, criterion=self.criterion)
             train_dataset.transition_matrix = torch.eye(self.model.fc.out_features).to(self.device) # assume not noisy
             print(f"Training noisy CNN to estimate transition matrix...")
-            noisy_cnn.train(train_dataset)
+            noisy_cnn.train(train_dataset, val_dataset)
             probs = all_softmax(noisy_cnn.model, DataLoader(train_dataset, batch_size=self.batch_size, shuffle=False), self.device)
             T_hat = estimate_T_anchor(probs)
             train_dataset.transition_matrix = T_hat
-        else:
-            super().train(train_dataset)
+            val_dataset.transition_matrix = T_hat
+        super().train(train_dataset, val_dataset)
         # torch.save(self.model.state_dict(), f'models/resnet18_{self.dataset_name}_model_{round}.pth')
 
 
@@ -204,8 +209,8 @@ class CNNWithNAL(ModelBase):
             lr=self.learning_rate
         )
 
-    def train(self, train_dataset: ImageDataset):
-        super().train(train_dataset, nal_layer=True)
+    def train(self, train_dataset: ImageDataset, val_dataset: ImageDataset):
+        super().train(train_dataset, val_dataset, nal_layer=True)
     
 
 
