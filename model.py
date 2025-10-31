@@ -69,6 +69,8 @@ class ModelBase:
 
         for epoch in range(self.num_epochs):
             self.model.train()
+            if nal_layer:
+                self.nal.train()
             running_loss = 0.0
 
             for images, labels in train_loader:
@@ -78,14 +80,16 @@ class ModelBase:
                 outputs = self.model(images)
 
                 if nal_layer:
-                    # clean_probs = F.softmax(outputs, dim=1)
-                    # noisy_probs = self.nal(clean_probs)
-                    # loss = F.nll_loss(torch.log(noisy_probs), labels)
+                    clean_probs = F.softmax(outputs, dim=1)
+                    T = F.softmax(self.nal.transition_matrix, dim=1)
+                    noisy_probs = torch.clamp(clean_probs @ T, 1e-12, 1)
+                    loss = F.nll_loss(torch.log(noisy_probs), labels)
+
                     # Test
-                    log_clean = F.log_softmax(outputs, dim=1)
-                    logT = F.log_softmax(self.nal.logits, dim=1) 
-                    log_noisy = torch.logsumexp(log_clean.unsqueeze(2) + logT.unsqueeze(0), dim=1)
-                    loss = F.nll_loss(log_noisy, labels)
+                    # log_clean = F.log_softmax(outputs, dim=1)
+                    # logT = F.log_softmax(self.nal.logits, dim=1) 
+                    # log_noisy = torch.logsumexp(log_clean.unsqueeze(2) + logT.unsqueeze(0), dim=1)
+                    # loss = F.nll_loss(log_noisy, labels)
                 else:
                     train_dataset.transition_matrix = train_dataset.transition_matrix.to(self.device)
                     loss = forward_loss_calculation(outputs, labels, train_dataset.transition_matrix)
@@ -97,6 +101,8 @@ class ModelBase:
 
             # Validation phase
             self.model.eval()
+            if nal_layer:
+                self.nal.eval()
             val_loss = 0.0
             correct = 0
             total = 0
@@ -107,14 +113,15 @@ class ModelBase:
 
                     outputs = self.model(images)
                     if nal_layer:
-                        # clean_probs = F.softmax(outputs, dim=1)
-                        # noisy_probs = self.nal(clean_probs)
-                        # loss = F.nll_loss(torch.log(noisy_probs), labels)
+                        clean_probs = F.softmax(outputs, dim=1)
+                        T = F.softmax(self.nal.transition_matrix, dim=1)
+                        noisy_probs = torch.clamp(clean_probs @ T, 1e-12, 1)
+                        loss = F.nll_loss(torch.log(noisy_probs), labels)
                         # Test
-                        log_clean = F.log_softmax(outputs, dim=1)
-                        logT = F.log_softmax(self.nal.logits, dim=1) 
-                        log_noisy = torch.logsumexp(log_clean.unsqueeze(2) + logT.unsqueeze(0), dim=1)
-                        loss = F.nll_loss(log_noisy, labels)
+                        # log_clean = F.log_softmax(outputs, dim=1)
+                        # logT = F.log_softmax(self.nal.logits, dim=1) 
+                        # log_noisy = torch.logsumexp(log_clean.unsqueeze(2) + logT.unsqueeze(0), dim=1)
+                        # loss = F.nll_loss(log_noisy, labels)
                     else:
                         loss = forward_loss_calculation(outputs, labels, train_dataset.transition_matrix)
                     val_loss += loss.item()
@@ -141,11 +148,13 @@ class ModelBase:
         if best_model_parameters:
             self.model.load_state_dict(best_model_parameters)
     
-    def predict(self, test_dataset: ImageDataset):
+    def predict(self, test_dataset: ImageDataset, nal_layer=False):
         test_dataset.transform = self.model_transform
         test_loader = build_test_loader(test_dataset)
 
         self.model.eval()
+        if nal_layer:
+            self.nal.eval()
         y_true = []
         y_pred = []
 
@@ -218,6 +227,9 @@ class CNNWithNAL(ModelBase):
 
     def train(self, train_dataset: ImageDataset, val_dataset: ImageDataset):
         super().train(train_dataset, val_dataset, nal_layer=True)
+
+    def predict(self, test_dataset: ImageDataset):
+        super().predict(test_dataset, nal_layer=True)
     
 
 
