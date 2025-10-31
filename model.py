@@ -78,9 +78,14 @@ class ModelBase:
                 outputs = self.model(images)
 
                 if nal_layer:
-                    clean_probs = F.softmax(outputs, dim=1)
-                    noisy_probs = self.nal(clean_probs)
-                    loss = F.nll_loss(torch.log(noisy_probs), labels)
+                    # clean_probs = F.softmax(outputs, dim=1)
+                    # noisy_probs = self.nal(clean_probs)
+                    # loss = F.nll_loss(torch.log(noisy_probs), labels)
+                    # Test
+                    log_clean = F.log_softmax(outputs, dim=1)
+                    logT = F.log_softmax(self.nal.logits, dim=1) 
+                    log_noisy = torch.logsumexp(log_clean.unsqueeze(2) + logT.unsqueeze(0), dim=1)
+                    loss = F.nll_loss(log_noisy, labels)
                 else:
                     train_dataset.transition_matrix = train_dataset.transition_matrix.to(self.device)
                     loss = forward_loss_calculation(outputs, labels, train_dataset.transition_matrix)
@@ -102,9 +107,14 @@ class ModelBase:
 
                     outputs = self.model(images)
                     if nal_layer:
-                        clean_probs = F.softmax(outputs, dim=1)
-                        noisy_probs = self.nal(clean_probs)
-                        loss = F.nll_loss(torch.log(noisy_probs), labels)
+                        # clean_probs = F.softmax(outputs, dim=1)
+                        # noisy_probs = self.nal(clean_probs)
+                        # loss = F.nll_loss(torch.log(noisy_probs), labels)
+                        # Test
+                        log_clean = F.log_softmax(outputs, dim=1)
+                        logT = F.log_softmax(self.nal.logits, dim=1) 
+                        log_noisy = torch.logsumexp(log_clean.unsqueeze(2) + logT.unsqueeze(0), dim=1)
+                        loss = F.nll_loss(log_noisy, labels)
                     else:
                         loss = forward_loss_calculation(outputs, labels, train_dataset.transition_matrix)
                     val_loss += loss.item()
