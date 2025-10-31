@@ -190,8 +190,8 @@ class CNN(ModelBase):
             noisy_cnn.train(train_dataset, val_dataset)
             probs = all_softmax(noisy_cnn.model, DataLoader(train_dataset, batch_size=self.batch_size, shuffle=False), self.device)
             T_hat = estimate_T_anchor(probs)
-            train_dataset.transition_matrix = T_hat
-            val_dataset.transition_matrix = T_hat
+            train_dataset.transition_matrix = T_hat.T
+            val_dataset.transition_matrix = T_hat.T
         super().train(train_dataset, val_dataset)
         # torch.save(self.model.state_dict(), f'models/resnet18_{self.dataset_name}_model_{round}.pth')
 
