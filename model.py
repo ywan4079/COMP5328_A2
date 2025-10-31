@@ -152,18 +152,15 @@ class ModelBase:
         return y_true, y_pred
         
 class NoiseAdaptionLayer(nn.Module):
-    def __init__(self, num_classes: int, transition_matrix: torch.Tensor = None):
+    def __init__(self, num_classes: int):
         super().__init__()
         self.num_classes = num_classes
-        if transition_matrix is not None:
-            self.transition_matrix = transition_matrix
-        else:
-            epsilon = 1e-9
-            t = torch.full((num_classes, num_classes), fill_value=epsilon / (num_classes - 1))
-            for i in range(num_classes):
-                t[i, i] = 1.0 - epsilon
-            t = torch.log(t)
-            self.transition_matrix = nn.Parameter(t)
+        epsilon = 1e-9
+        t = torch.full((num_classes, num_classes), fill_value=epsilon / (num_classes - 1))
+        for i in range(num_classes):
+            t[i, i] = 1.0 - epsilon
+        t = torch.log(t)
+        self.transition_matrix = nn.Parameter(t)
         self.transition_matrix.requires_grad = True
 
 
