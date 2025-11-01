@@ -81,8 +81,9 @@ class ModelBase:
 
                 if nal_layer:
                     clean_probs = F.softmax(outputs, dim=1)
-                    T = F.softmax(self.nal.transition_matrix, dim=1)
-                    noisy_probs = torch.clamp(clean_probs @ T, 1e-12, 1)
+                    # T = F.softmax(self.nal.transition_matrix, dim=1)
+                    # noisy_probs = torch.clamp(clean_probs @ T, 1e-12, 1)
+                    noisy_probs = self.nal.forward(clean_probs)
                     loss = F.nll_loss(torch.log(noisy_probs), labels)
 
                     # Test
@@ -114,8 +115,9 @@ class ModelBase:
                     outputs = self.model(images)
                     if nal_layer:
                         clean_probs = F.softmax(outputs, dim=1)
-                        T = F.softmax(self.nal.transition_matrix, dim=1)
-                        noisy_probs = torch.clamp(clean_probs @ T, 1e-12, 1)
+                        # T = F.softmax(self.nal.transition_matrix, dim=1)
+                        # noisy_probs = torch.clamp(clean_probs @ T, 1e-12, 1)
+                        noisy_probs = self.nal.forward(clean_probs)
                         loss = F.nll_loss(torch.log(noisy_probs), labels)
                         # Test
                         # log_clean = F.log_softmax(outputs, dim=1)
@@ -174,18 +176,11 @@ class NoiseAdaptionLayer(nn.Module):
     def __init__(self, num_classes: int):
         super().__init__()
         self.num_classes = num_classes
-        epsilon = 1e-9
-        t = torch.full((num_classes, num_classes), fill_value=epsilon / (num_classes - 1))
-        for i in range(num_classes):
-            t[i, i] = 1.0 - epsilon
-        t = torch.log(t)
-        self.transition_matrix = nn.Parameter(t)
-        self.transition_matrix.requires_grad = True
-
+        # logits will be updated later
 
     def forward(self, clean_prob: torch.Tensor) -> torch.Tensor:
-        T = F.softmax(self.transition_matrix, dim=1)
-        noisy_prob = torch.clamp(clean_prob @ T, 1e-12, 1)
+        T = F.softmax(self.logits, dim=1)
+        noisy_prob = torch.clamp(clean_prob @ T, 1e-9, 1)
         return noisy_prob
 
 
@@ -225,7 +220,26 @@ class CNNWithNAL(ModelBase):
             lr=self.learning_rate
         )
 
+    def get_NAL_params(self, basline_model: ModelBase, train_dataset: ImageDataset):
+        y_true_noise, y_pred = basline_model.predict(train_dataset)
+        baseline_cm = np.zeros((self.nal.num_classes, self.nal.num_classes))
+        for n, p in zip(y_true_noise, y_pred):
+            baseline_cm[p, n] += 1
+
+        baseline_cm /= baseline_cm.sum(axis=1, keepdims=True)
+        baseline_cm = np.log(baseline_cm + 1e-9)
+        baseline_cm = nn.Parameter(baseline_cm)
+        baseline_cm.requires_grad = True
+
+        return baseline_cm
+
     def train(self, train_dataset: ImageDataset, val_dataset: ImageDataset):
+        noisy_cnn = CNN(num_classes=self.model.fc.out_features, dataset_name=self.dataset_name, num_epochs=self.num_epochs, learning_rate=self.learning_rate, batch_size=self.batch_size, patience=self.patience, criterion=self.criterion)
+        train_dataset.transition_matrix = torch.eye(self.model.fc.out_features).to(self.device) # assume not noisy
+        print(f"Training noisy CNN to estimate NAL Layer params...")
+        noisy_cnn.train(train_dataset, val_dataset)
+        self.nal.logits = self.get_NAL_params(noisy_cnn, train_dataset)
+
         super().train(train_dataset, val_dataset, nal_layer=True)
 
     def predict(self, test_dataset: ImageDataset):
