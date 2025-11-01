@@ -239,6 +239,7 @@ class CNNWithNAL(ModelBase):
         print(f"Training noisy CNN to estimate NAL Layer params...")
         noisy_cnn.train(train_dataset, val_dataset)
         self.nal.logits = self.get_NAL_params(noisy_cnn, train_dataset)
+        self.nal.logits = self.nal.logits.to(self.device)
 
         super().train(train_dataset, val_dataset, nal_layer=True)
 
