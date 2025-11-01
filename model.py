@@ -228,7 +228,7 @@ class CNNWithNAL(ModelBase):
 
         baseline_cm /= baseline_cm.sum(axis=1, keepdims=True)
         baseline_cm = np.log(baseline_cm + 1e-9)
-        baseline_cm = nn.Parameter(baseline_cm)
+        baseline_cm = nn.Parameter(torch.from_numpy(baseline_cm))
         baseline_cm.requires_grad = True
 
         return baseline_cm
