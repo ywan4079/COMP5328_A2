@@ -163,7 +163,7 @@ class ModelBase:
         with torch.no_grad():
             for images, labels in test_loader:
                 images = images.to(self.device)
-
+                    
                 outputs = self.model(images)
                 _, predicted = torch.max(outputs.data, 1)
 
@@ -230,7 +230,6 @@ class CNNWithNAL(ModelBase):
         baseline_cm = np.log(baseline_cm + 1e-9)
 
         baseline_cm = nn.Parameter(torch.from_numpy(baseline_cm).to(device=self.device, dtype=torch.float32))
-        baseline_cm.requires_grad = True
 
         return baseline_cm
 
@@ -245,7 +244,7 @@ class CNNWithNAL(ModelBase):
         super().train(train_dataset, val_dataset, nal_layer=True)
 
     def predict(self, test_dataset: ImageDataset):
-        super().predict(test_dataset, nal_layer=True)
+        return super().predict(test_dataset, nal_layer=True)
     
 
 
