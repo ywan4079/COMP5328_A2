@@ -227,13 +227,13 @@ class CNNWithNAL(ModelBase):
     def __init__(self, num_classes: int, dataset_name: str = "", num_epochs: int = 100, learning_rate: float = 0.001, batch_size: int = 128, patience: int = 10, criterion=nn.CrossEntropyLoss(), optimizer=torch.optim.Adam):
         super().__init__(num_epochs, dataset_name, learning_rate, batch_size, patience, criterion)
 
-        self.baseline_model = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1) # 11.7M
-        self.baseline_model.fc = nn.Linear(self.baseline_model.fc.in_features, num_classes)
-        self.baseline_model = self.baseline_model.to(self.device)
+        self.model = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1) # 11.7M
+        self.model.fc = nn.Linear(self.model.fc.in_features, num_classes)
+        self.model = self.model.to(self.device)
         self.model_transform = models.ResNet18_Weights.DEFAULT.transforms()
         self.num_classes = num_classes
 
-        self.optimizer = optimizer(self.baseline_model.parameters(), lr=self.learning_rate, weight_decay=1e-4)
+        self.optimizer = optimizer(self.model.parameters(), lr=self.learning_rate, weight_decay=1e-4)
 
         # self.nal = NoiseLayer(num_classes).to(self.device)
         # self.optimizer = optimizer(
@@ -264,8 +264,9 @@ class CNNWithNAL(ModelBase):
         epoch_no_improvement = 0
         best_model_parameters = None
         for epoch in range(self.num_epochs):
-            baseline_train_acc_list, baseline_train_loss_list = Baseline_train(train_loader, self.baseline_model, self.optimizer, self.criterion)
-            noise_test_acc_list, noise_test_loss_list = test(val_loader, self.baseline_model, self.criterion)
+            print(f"Epoch: {epoch}/{self.num_epochs}")
+            baseline_train_acc_list, baseline_train_loss_list = Baseline_train(train_loader, self.model, self.optimizer, self.criterion)
+            noise_test_acc_list, noise_test_loss_list = test(val_loader, self.model, self.criterion)
             avg_val_loss = np.mean(noise_test_loss_list)
 
             if avg_val_loss < best_val_loss:
@@ -278,10 +279,10 @@ class CNNWithNAL(ModelBase):
                     print(f"No improvement for {self.patience} epochs. Early stopping.")
                     break
         if best_model_parameters:
-            self.baseline_model.load_state_dict(best_model_parameters)
+            self.model.load_state_dict(best_model_parameters)
         print("Finish training baseline model")
         
-        Baseline_output, y_train_noise = train_predict(self.baseline_model, train_loader)
+        Baseline_output, y_train_noise = train_predict(self.model, train_loader)
         Baseline_confusion = np.zeros((self.num_classes, self.num_classes))
         for n, p in zip(y_train_noise, Baseline_output):
             n = n.cpu().numpy()
@@ -303,10 +304,10 @@ class CNNWithNAL(ModelBase):
         best_model_parameters = None
         for epoch in range(self.num_epochs):
             print('Revision Epoch:', epoch)
-            noise_train_acc_list, noise_train_loss_list = Hybrid_train(train_loader, self.baseline_model, noisemodel,
+            noise_train_acc_list, noise_train_loss_list = Hybrid_train(train_loader, self.model, noisemodel,
                                                                        self.optimizer, noise_optimizer, self.criterion)
             print("After hybrid, test acc: ")
-            noise_test_acc_list, noise_test_loss_list = test(val_loader, self.baseline_model, self.criterion)
+            noise_test_acc_list, noise_test_loss_list = test(val_loader, self.model, self.criterion)
             avg_val_loss = np.mean(noise_test_loss_list)
             if avg_val_loss < best_val_loss:
                 best_val_loss = avg_val_loss
@@ -318,7 +319,7 @@ class CNNWithNAL(ModelBase):
                     print(f"No improvement for {self.patience} epochs. Early stopping.")
                     break
         if best_model_parameters:
-            self.baseline_model.load_state_dict(best_model_parameters)
+            self.model.load_state_dict(best_model_parameters)
         print("Finished hybrid training.")
 
 
@@ -333,7 +334,7 @@ class CNNWithNAL(ModelBase):
         # super().train(train_dataset, val_dataset, nal_layer=True)
 
     def predict(self, test_dataset: ImageDataset):       
-        super().predict(test_dataset)
+        return super().predict(test_dataset)
     
 
 

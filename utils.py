@@ -1,5 +1,4 @@
 import torch
-from parse_config import args
 
 
 def Baseline_train(train_loader, model, optimizer, criterion):
@@ -52,7 +51,7 @@ def Hybrid_train(train_loader, model, noisemodel, optimizer, noise_optimizer, cr
         # calculate loss and acc
         Baseline_loss = criterion(out, batch_y)
         noisemodel_loss = criterion(predictions, batch_y)
-        loss = (1 - args.beta) * Baseline_loss + args.beta * noisemodel_loss
+        loss = (1 - 0.8) * Baseline_loss + 0.8 * noisemodel_loss
         acc = accuracy(predictions, batch_y)
         train_acc_meter.update(acc, out.size(0))
         train_loss_meter.update(loss, out.size(0))
