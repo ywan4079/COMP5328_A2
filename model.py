@@ -5,6 +5,7 @@ from torchvision import models
 from torch.utils.data import DataLoader
 from dataset import train_val_split, build_test_loader, ImageDataset
 import numpy as np
+from utils import Baseline_train, test, train_predict, Hybrid_train
 
 def forward_loss_calculation(outputs, noisy_labels, transition_matrix): # this is cross-entropy loss with loss correction
     if transition_matrix is None:
@@ -172,16 +173,31 @@ class ModelBase:
 
         return y_true, y_pred
         
-class NoiseAdaptionLayer(nn.Module):
-    def __init__(self, num_classes: int):
-        super().__init__()
-        self.num_classes = num_classes
-        # logits will be updated later
+# class NoiseAdaptionLayer(nn.Module):
+#     def __init__(self, num_classes: int):
+#         super().__init__()
+#         self.num_classes = num_classes
+#         # logits will be updated later
 
-    def forward(self, clean_prob: torch.Tensor) -> torch.Tensor:
-        T = F.softmax(self.logits, dim=1)
-        noisy_prob = torch.clamp(clean_prob @ T, 1e-9, 1)
-        return noisy_prob
+#     def forward(self, clean_prob: torch.Tensor) -> torch.Tensor:
+#         T = F.softmax(self.logits, dim=1)
+#         noisy_prob = torch.clamp(clean_prob @ T, 1e-9, 1)
+#         return noisy_prob
+
+class NoiseLayer(nn.Module):
+    def __init__(self, theta, k):
+        super(NoiseLayer, self).__init__()
+        self.theta = nn.Linear(k, k, bias=False)
+        self.theta.weight.data = nn.Parameter(theta)
+        self.eye = torch.Tensor(np.eye(k))
+        self.softmax = nn.Softmax(dim=0)
+
+    def forward(self, x):
+        theta = self.eye.to(x.device).detach()
+        theta = self.theta(theta)
+        theta = self.softmax(theta)
+        out = torch.matmul(x, theta)
+        return out
 
 
 class CNN(ModelBase):
@@ -210,15 +226,20 @@ class CNN(ModelBase):
 class CNNWithNAL(ModelBase):
     def __init__(self, num_classes: int, dataset_name: str = "", num_epochs: int = 100, learning_rate: float = 0.001, batch_size: int = 128, patience: int = 10, criterion=nn.CrossEntropyLoss(), optimizer=torch.optim.Adam):
         super().__init__(num_epochs, dataset_name, learning_rate, batch_size, patience, criterion)
-        self.model = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1) # 11.7M
-        self.model.fc = nn.Linear(self.model.fc.in_features, num_classes)
-        self.model = self.model.to(self.device)
+
+        self.baseline_model = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1) # 11.7M
+        self.baseline_model.fc = nn.Linear(self.baseline_model.fc.in_features, num_classes)
+        self.baseline_model = self.baseline_model.to(self.device)
         self.model_transform = models.ResNet18_Weights.DEFAULT.transforms()
-        self.nal = NoiseAdaptionLayer(num_classes).to(self.device)
-        self.optimizer = optimizer(
-            list(self.model.parameters()) + list(self.nal.parameters()),
-            lr=self.learning_rate
-        )
+        self.num_classes = num_classes
+
+        self.optimizer = optimizer(self.baseline_model.parameters(), lr=self.learning_rate, weight_decay=1e-4)
+
+        # self.nal = NoiseLayer(num_classes).to(self.device)
+        # self.optimizer = optimizer(
+        #     list(self.model.parameters()) + list(self.nal.parameters()),
+        #     lr=self.learning_rate
+        # )
 
     def get_NAL_params(self, basline_model: ModelBase, train_dataset: ImageDataset):
         y_true_noise, y_pred = basline_model.predict(train_dataset)
@@ -234,17 +255,85 @@ class CNNWithNAL(ModelBase):
         return baseline_cm
 
     def train(self, train_dataset: ImageDataset, val_dataset: ImageDataset):
-        noisy_cnn = CNN(num_classes=self.model.fc.out_features, dataset_name=self.dataset_name, num_epochs=self.num_epochs, learning_rate=self.learning_rate, batch_size=self.batch_size, patience=self.patience, criterion=self.criterion)
-        train_dataset.transition_matrix = torch.eye(self.model.fc.out_features).to(self.device) # assume not noisy
-        print(f"Training noisy CNN to estimate NAL Layer params...")
-        noisy_cnn.train(train_dataset, val_dataset)
-        self.nal.logits = self.get_NAL_params(noisy_cnn, train_dataset)
-        self.nal.logits = self.nal.logits.to(self.device)
+        train_dataset.transform = self.model_transform
+        val_dataset.transform = self.model_transform
+        train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True)
+        val_loader = DataLoader(val_dataset, batch_size=self.batch_size, shuffle=False)
 
-        super().train(train_dataset, val_dataset, nal_layer=True)
+        best_val_loss = float('inf')
+        epoch_no_improvement = 0
+        best_model_parameters = None
+        for epoch in range(self.num_epochs):
+            baseline_train_acc_list, baseline_train_loss_list = Baseline_train(train_loader, self.baseline_model, self.optimizer, self.criterion)
+            noise_test_acc_list, noise_test_loss_list = test(val_loader, self.baseline_model, self.criterion)
+            avg_val_loss = np.mean(noise_test_loss_list)
 
-    def predict(self, test_dataset: ImageDataset):
-        return super().predict(test_dataset, nal_layer=True)
+            if avg_val_loss < best_val_loss:
+                best_val_loss = avg_val_loss
+                epoch_no_improvement = 0
+                best_model_parameters = self.model.state_dict()
+            else:
+                epoch_no_improvement += 1
+                if epoch_no_improvement >= self.patience:
+                    print(f"No improvement for {self.patience} epochs. Early stopping.")
+                    break
+        if best_model_parameters:
+            self.baseline_model.load_state_dict(best_model_parameters)
+        print("Finish training baseline model")
+        
+        Baseline_output, y_train_noise = train_predict(self.baseline_model, train_loader)
+        Baseline_confusion = np.zeros((self.num_classes, self.num_classes))
+        for n, p in zip(y_train_noise, Baseline_output):
+            n = n.cpu().numpy()
+            p = p.cpu().numpy()
+            Baseline_confusion[p, n] += 1.
+        # noisy channel
+        channel_weights = Baseline_confusion.copy()
+        channel_weights /= channel_weights.sum(axis=1, keepdims=True)
+        channel_weights = np.log(channel_weights + 1e-8)
+        channel_weights = torch.from_numpy(channel_weights)  # numpy.ndarray -> tensor
+        channel_weights = channel_weights.float()
+        noisemodel = NoiseLayer(theta=channel_weights.to(self.device), k=self.num_classes)
+        noise_optimizer = torch.optim.Adam(noisemodel.parameters(),
+                                     lr=self.learning_rate,
+                                     weight_decay=1e-4)
+        print("noisy channel finished.")
+        best_val_loss = float('inf')
+        epoch_no_improvement = 0
+        best_model_parameters = None
+        for epoch in range(self.num_epochs):
+            print('Revision Epoch:', epoch)
+            noise_train_acc_list, noise_train_loss_list = Hybrid_train(train_loader, self.baseline_model, noisemodel,
+                                                                       self.optimizer, noise_optimizer, self.criterion)
+            print("After hybrid, test acc: ")
+            noise_test_acc_list, noise_test_loss_list = test(val_loader, self.baseline_model, self.criterion)
+            avg_val_loss = np.mean(noise_test_loss_list)
+            if avg_val_loss < best_val_loss:
+                best_val_loss = avg_val_loss
+                epoch_no_improvement = 0
+                best_model_parameters = self.model.state_dict()
+            else:
+                epoch_no_improvement += 1
+                if epoch_no_improvement >= self.patience:
+                    print(f"No improvement for {self.patience} epochs. Early stopping.")
+                    break
+        if best_model_parameters:
+            self.baseline_model.load_state_dict(best_model_parameters)
+        print("Finished hybrid training.")
+
+
+
+        # noisy_cnn = CNN(num_classes=self.model.fc.out_features, dataset_name=self.dataset_name, num_epochs=self.num_epochs, learning_rate=self.learning_rate, batch_size=self.batch_size, patience=self.patience, criterion=self.criterion)
+        # train_dataset.transition_matrix = torch.eye(self.model.fc.out_features).to(self.device) # assume not noisy
+        # print(f"Training noisy CNN to estimate NAL Layer params...")
+        # noisy_cnn.train(train_dataset, val_dataset)
+        # self.nal.logits = self.get_NAL_params(noisy_cnn, train_dataset)
+        # self.nal.logits = self.nal.logits.to(self.device)
+
+        # super().train(train_dataset, val_dataset, nal_layer=True)
+
+    def predict(self, test_dataset: ImageDataset):       
+        super().predict(test_dataset)
     
 
 
